@@ -20,10 +20,11 @@ function App() {
   const [queueIndex,setQueueIndex] = useState(-1);
   const [shuffle,setShuffle] = useState(false);
   const [repeat,setRepeat] = useState(false);
+  const [playlists,setPlaylists] = useState<{id:number;name:string;description:string}[]>([]);
   const audio = useRef<HTMLAudioElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { api<{data:Track[]}>('/api/tracks').then(x=>setTracks(x.data)); api<{data:Track[]}>('/api/liked').then(x=>setLiked(x.data)); }, []);
+  useEffect(() => { api<{data:Track[]}>('/api/tracks').then(x=>setTracks(x.data)); api<{data:Track[]}>('/api/liked').then(x=>setLiked(x.data)); api<{data:{id:number;name:string;description:string}[]}>('/api/playlists').then(x=>setPlaylists(x.data)); }, []);
   useEffect(() => { if (audio.current && current) { audio.current.src=`/api/audio/${current.id}`; if (playing) audio.current.play().catch(()=>setPlaying(false)); } }, [current]);
   useEffect(() => { if (audio.current) audio.current.volume=volume; }, [volume]);
 
@@ -36,6 +37,7 @@ function App() {
   const importFile = async (file:File) => { const response=await fetch('/api/library/import-upload',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':file.name,'X-Track-Title':file.name.replace(/\.[^/.]+$/,''),'X-Track-Artist':'Imported local music','X-Track-Album':'Local library'},body:file}); if(!response.ok)return; const result=await response.json(); setTracks(prev=>[{id:result.data.id,title:result.data.title,artist:result.data.artist,album:result.data.album,duration:0},...prev]); setPage('Your Library'); };
   const format = (value:number) => `${Math.floor(value/60)}:${Math.floor(value%60).toString().padStart(2,'0')}`;
   const chooseFile = () => fileInput.current?.click();
+  const createPlaylist = async () => { const name=window.prompt('Playlist name'); if(!name?.trim())return; const result=await api<{data:{id:number;name:string;description:string}}>('/api/playlists',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim()})}); setPlaylists(prev=>[result.data,...prev]); setPage('Playlists'); };
   const trackList = page==='Liked Songs' ? liked : shown;
 
   return <div className="shell">
@@ -46,7 +48,8 @@ function App() {
         {page==='Local Music'&&<div className="import-panel"><p>Choose an audio file you are authorized to use. MafatMusic copies it into the local library directory and never sends it to a third party.</p><button className="primary" onClick={chooseFile}><Upload size={17}/> Choose audio file</button></div>}
         <input ref={fileInput} hidden type="file" accept="audio/*" onChange={e=>e.target.files?.[0]&&importFile(e.target.files[0])}/>
         {page==='Search'&&query&&<h2 className="section-title">Results for “{query}”</h2>}{page==='Liked Songs'&&<h2 className="section-title">Your favorites</h2>}
-        <div className="section-head"><h2>{page==='Home'?'Your library':page==='Search'?'Tracks':page}</h2>{page==='Playlists'&&<button className="ghost"><Plus size={16}/> New playlist</button>}</div>
+        <div className="section-head"><h2>{page==='Home'?'Your library':page==='Search'?'Tracks':page}</h2>{page==='Playlists'&&<button className="ghost" onClick={createPlaylist}><Plus size={16}/> New playlist</button>}</div>
+        {page==='Playlists'&&<div className="playlist-grid">{playlists.map(playlist=><button className="playlist-card" key={playlist.id} onClick={()=>setPage(`Playlist:${playlist.id}`)}><ListMusic size={22}/><strong>{playlist.name}</strong><span>{playlist.description||'A MafatMusic playlist'}</span></button>)}</div>}
         {trackList.length===0?<div className="empty"><Music2 size={36}/><h3>{page==='Local Music'?'Bring your music to life':'Nothing here yet'}</h3><p>Import an authorized local audio file to get started.</p></div>:<div className="tracks">{trackList.map((track,i)=><div className="track" key={track.id}><span className="track-number">{String(i+1).padStart(2,'0')}</span><div className="art">{track.title[0]}</div><div className="track-meta"><strong>{track.title}</strong><span>{track.artist} · {track.album}</span></div><button className="icon-button" aria-label="Like" onClick={()=>toggleLike(track)}><Heart size={17} fill={liked.some(x=>x.id===track.id)?'currentColor':'none'}/></button><button className="play-mini" onClick={()=>play(track,trackList)}><Play size={15} fill="currentColor"/></button></div>)}</div>}
       </section>
     </main>
