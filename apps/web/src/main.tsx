@@ -21,10 +21,12 @@ function App() {
   const [shuffle,setShuffle] = useState(false);
   const [repeat,setRepeat] = useState(false);
   const [playlists,setPlaylists] = useState<{id:number;name:string;description:string}[]>([]);
+  const [artists,setArtists] = useState<{id:number;name:string;track_count:number}[]>([]);
+  const [albums,setAlbums] = useState<{id:number;title:string;artist:string;track_count:number}[]>([]);
   const audio = useRef<HTMLAudioElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { api<{data:Track[]}>('/api/tracks').then(x=>setTracks(x.data)); api<{data:Track[]}>('/api/liked').then(x=>setLiked(x.data)); api<{data:{id:number;name:string;description:string}[]}>('/api/playlists').then(x=>setPlaylists(x.data)); }, []);
+  useEffect(() => { api<{data:Track[]}>('/api/tracks').then(x=>setTracks(x.data)); api<{data:Track[]}>('/api/liked').then(x=>setLiked(x.data)); api<{data:{id:number;name:string;description:string}[]}>('/api/playlists').then(x=>setPlaylists(x.data)); api<{data:{id:number;name:string;track_count:number}[]}>('/api/artists').then(x=>setArtists(x.data)); api<{data:{id:number;title:string;artist:string;track_count:number}[]}>('/api/albums').then(x=>setAlbums(x.data)); }, []);
   useEffect(() => { if (audio.current && current) { audio.current.src=`/api/audio/${current.id}`; if (playing) audio.current.play().catch(()=>setPlaying(false)); } }, [current]);
   useEffect(() => { if (audio.current) audio.current.volume=volume; }, [volume]);
 
@@ -46,6 +48,7 @@ function App() {
       <section className="content"><div className="eyebrow">{page==='Home'?'WELCOME BACK':'YOUR SPACE'}</div><h1>{page}</h1>
         {page==='Home'&&<div className="hero"><div><p className="eyebrow">LOCAL-FIRST LISTENING</p><h2>Find your next<br/><em>favorite sound.</em></h2><p>Import music you own and make your listening space yours.</p><button className="primary" onClick={chooseFile}><Upload size={17}/> Import music</button></div><div className="hero-orbit">♫</div></div>}
         {page==='Local Music'&&<div className="import-panel"><p>Choose an audio file you are authorized to use. MafatMusic copies it into the local library directory and never sends it to a third party.</p><button className="primary" onClick={chooseFile}><Upload size={17}/> Choose audio file</button></div>}
+        {page==='Discover'&&<div className="discover"><div><h2 className="section-title">Artists in your library</h2><div className="catalog-grid">{artists.map(artist=><div className="catalog-card" key={artist.id}><div className="art">{artist.name[0]}</div><strong>{artist.name}</strong><span>{artist.track_count} {artist.track_count===1?'track':'tracks'}</span></div>)}</div></div><div><h2 className="section-title">Albums in your library</h2><div className="catalog-grid">{albums.map(album=><div className="catalog-card" key={album.id}><div className="art">{album.title[0]}</div><strong>{album.title}</strong><span>{album.artist||'Unknown artist'} · {album.track_count} tracks</span></div>)}</div></div></div>}
         <input ref={fileInput} hidden type="file" accept="audio/*" onChange={e=>e.target.files?.[0]&&importFile(e.target.files[0])}/>
         {page==='Search'&&query&&<h2 className="section-title">Results for “{query}”</h2>}{page==='Liked Songs'&&<h2 className="section-title">Your favorites</h2>}
         <div className="section-head"><h2>{page==='Home'?'Your library':page==='Search'?'Tracks':page}</h2>{page==='Playlists'&&<button className="ghost" onClick={createPlaylist}><Plus size={16}/> New playlist</button>}</div>
