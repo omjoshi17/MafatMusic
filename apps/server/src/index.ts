@@ -1,0 +1,24 @@
+import express from 'express';
+import cors from 'cors';
+import fs from 'node:fs';
+import path from 'node:path';
+import { z } from 'zod';
+import { db, migrate } from './database/db.js';
+
+migrate();
+const app = express(); app.use(cors()); app.use(express.json({ limit: '1mb' }));
+const track = (row: any) => ({ id: row.id, title: row.title, artist: row.artist_name ?? 'Unknown artist', album: row.album_title ?? 'Unknown album', duration: row.duration, genre: row.genre, source: row.local_file_reference });
+const trackQuery = `SELECT t.*, a.name artist_name, al.title album_title FROM tracks t LEFT JOIN artists a ON a.id=t.artist_id LEFT JOIN albums al ON al.id=t.album_id`;
+app.get('/api/health', (_req,res) => res.json({ ok: true, name: 'MafatMusic' }));
+app.get('/api/audio/:id', (req,res) => { const row:any=db.prepare('SELECT local_file_reference FROM tracks WHERE id=?').get(Number(req.params.id)); if(!row?.local_file_reference || !path.isAbsolute(row.local_file_reference) || !fs.existsSync(row.local_file_reference)) return res.status(404).json({error:'Audio file is unavailable.'}); res.sendFile(path.resolve(row.local_file_reference)); });
+app.get('/api/tracks', (_req,res) => res.json({ data: db.prepare(`${trackQuery} ORDER BY t.created_at DESC`).all().map(track) }));
+app.get('/api/search', (req,res) => { const q = String(req.query.q ?? '').trim(); if (!q) return res.json({ data: [] }); const like = `%${q}%`; res.json({ data: db.prepare(`${trackQuery} WHERE t.title LIKE ? OR a.name LIKE ? OR al.title LIKE ? ORDER BY t.title`).all(like,like,like).map(track) }); });
+app.get('/api/playlists', (_req,res) => res.json({ data: db.prepare('SELECT * FROM playlists ORDER BY updated_at DESC').all() }));
+app.post('/api/playlists', (req,res) => { const value = z.object({ name:z.string().trim().min(1).max(80), description:z.string().max(300).optional() }).parse(req.body); const info=db.prepare('INSERT INTO playlists(name,description) VALUES (?,?)').run(value.name,value.description??''); res.status(201).json({ data:{ id:info.lastInsertRowid,...value } }); });
+app.get('/api/liked', (_req,res) => res.json({ data: db.prepare(`${trackQuery} JOIN liked_tracks l ON l.track_id=t.id ORDER BY l.liked_at DESC`).all().map(track) }));
+app.post('/api/liked/:trackId', (req,res) => { db.prepare('INSERT OR IGNORE INTO liked_tracks(track_id) VALUES (?)').run(Number(req.params.trackId)); res.status(201).json({ ok:true }); });
+app.delete('/api/liked/:trackId', (req,res) => { db.prepare('DELETE FROM liked_tracks WHERE track_id=?').run(Number(req.params.trackId)); res.status(204).end(); });
+app.get('/api/settings', (_req,res) => res.json({ data: Object.fromEntries(db.prepare('SELECT key,value FROM preferences').all().map((r:any)=>[r.key,JSON.parse(r.value)])) }));
+app.patch('/api/settings', (req,res) => { for(const [key,value] of Object.entries(req.body)){ db.prepare('INSERT INTO preferences(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,JSON.stringify(value)); } res.json({ ok:true }); });
+app.post('/api/library/import', (req,res) => { const value=z.object({ title:z.string().min(1), artist:z.string().default('Unknown artist'), album:z.string().default('Unknown album'), source:z.string().min(1) }).parse(req.body); if(!path.isAbsolute(value.source) || !fs.existsSync(value.source)) return res.status(400).json({error:'Audio file does not exist.'}); const artist=db.prepare('INSERT INTO artists(name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name=excluded.name').run(value.artist); const artistRow:any=db.prepare('SELECT id FROM artists WHERE name=?').get(value.artist); const artistId=artist.lastInsertRowid || artistRow.id; const album=db.prepare('INSERT INTO albums(title,artist_id) VALUES (?,?) ON CONFLICT(title,artist_id) DO UPDATE SET title=excluded.title').run(value.album,artistId); const albumRow:any=db.prepare('SELECT id FROM albums WHERE title=? AND artist_id=?').get(value.album,artistId); const albumId=album.lastInsertRowid || albumRow.id; const info=db.prepare('INSERT OR IGNORE INTO tracks(title,artist_id,album_id,local_file_reference) VALUES (?,?,?,?)').run(value.title,artistId,albumId,value.source); res.status(201).json({data:{id:info.lastInsertRowid}}); });
+app.listen(Number(process.env.PORT ?? 4317), '127.0.0.1', () => console.log('MafatMusic API listening on http://127.0.0.1:4317'));
